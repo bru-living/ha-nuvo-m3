@@ -1,0 +1,17 @@
+name: Feature request
+description: Suggest an enhancement for the NuVo NV-M3 integration
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: Describe the outcome you want rather than only a proposed implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Relevant M3 capability
+      description: Include protocol packets or firmware-specific behavior if known.

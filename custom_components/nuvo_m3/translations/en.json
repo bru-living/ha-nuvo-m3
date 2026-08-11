@@ -1,0 +1,63 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "A NuVo NV-M3 is already configured.",
+      "reconfigure_successful": "The connection was updated successfully."
+    },
+    "error": {
+      "cannot_connect": "Unable to connect or no valid NV-M3 version response was received.",
+      "unknown": "Unexpected error."
+    },
+    "step": {
+      "user": {
+        "data": {
+          "connection_type": "Connection type",
+          "enable_artwork": "Fetch cover artwork"
+        },
+        "data_description": {
+          "connection_type": "TCP works with raw serial bridges such as Global Cache; serial uses a local device path.",
+          "enable_artwork": "Send the current artist, title and album to MusicBrainz and the Cover Art Archive to find artwork."
+        },
+        "title": "Choose connection type"
+      },
+      "connection": {
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "serial_path": "Serial device path"
+        },
+        "description": "The endpoint will be tested by requesting the NV-M3 firmware versions.",
+        "title": "Connect to the music server"
+      },
+      "reconfigure": {
+        "data": {
+          "connection_type": "Connection type",
+          "enable_artwork": "Fetch cover artwork"
+        },
+        "title": "Change connection type"
+      },
+      "reconfigure_connection": {
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "serial_path": "Serial device path"
+        },
+        "description": "The new endpoint will be tested before it is saved.",
+        "title": "Change M3 connection"
+      }
+    }
+  },
+  "entity": {
+    "switch": {
+      "jukebox_mode": {"name": "Juke Box mode"}
+    },
+    "sensor": {
+      "main_version": {"name": "Main firmware"},
+      "output_a_version": {"name": "Output A firmware"},
+      "output_b_version": {"name": "Output B firmware"},
+      "output_c_version": {"name": "Output C firmware"},
+      "server_status": {"name": "Server status"}
+    }
+  },
+  "title": "NuVo NV-M3 Music Server"
+}

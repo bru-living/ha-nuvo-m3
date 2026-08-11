@@ -1,0 +1,84 @@
+create_playlist:
+  name: Create playlist
+  description: Create an empty Home Assistant-managed M3 playlist.
+  fields:
+    name:
+      name: Name
+      description: Playlist name.
+      required: true
+      example: "Friday night"
+      selector:
+        text:
+delete_playlist:
+  name: Delete playlist
+  description: Delete a Home Assistant-managed playlist.
+  fields:
+    name:
+      name: Name
+      description: Playlist name.
+      required: true
+      selector:
+        text:
+add_current_track:
+  name: Add current track
+  description: Add the last M3 browser selection played on an output to a playlist.
+  fields:
+    name:
+      name: Name
+      description: Destination playlist.
+      required: true
+      selector:
+        text:
+    output:
+      name: Output
+      description: Output where the track was selected and played.
+      required: true
+      selector:
+        select:
+          options: ["A", "B", "C"]
+remove_playlist_track:
+  name: Remove playlist track
+  description: Remove a track by its one-based position in a playlist.
+  fields:
+    name:
+      name: Name
+      description: Playlist name.
+      required: true
+      selector:
+        text:
+    track_number:
+      name: Track number
+      description: Position of the track to remove, starting at 1.
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+play_playlist:
+  name: Play playlist
+  description: Play a Home Assistant-managed playlist sequentially on an M3 output.
+  fields:
+    name:
+      name: Name
+      description: Playlist name.
+      required: true
+      selector:
+        text:
+    output:
+      name: Output
+      description: M3 output that should play the playlist.
+      required: true
+      selector:
+        select:
+          options: ["A", "B", "C"]
+stop_playlist:
+  name: Stop playlist
+  description: Stop Home Assistant from advancing a managed playlist.
+  fields:
+    output:
+      name: Output
+      description: Output whose managed playlist should stop advancing.
+      required: true
+      selector:
+        select:
+          options: ["A", "B", "C"]

@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate Python and JSON
+        run: |
+          python -m compileall -q custom_components tests
+          python -m json.tool hacs.json > /dev/null
+          python -m json.tool custom_components/nuvo_m3/manifest.json > /dev/null
+          python -m json.tool custom_components/nuvo_m3/strings.json > /dev/null
+          python -m json.tool custom_components/nuvo_m3/translations/en.json > /dev/null
+
+      - name: Build manual-install archive
+        run: zip -r "nuvo_m3-${GITHUB_REF_NAME}.zip" custom_components README.md LICENSE CHANGELOG.md hacs.json
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          archive="nuvo_m3-${GITHUB_REF_NAME}.zip"
+          if gh release view "${GITHUB_REF_NAME}" > /dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "${archive}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${archive}" --generate-notes --title "${GITHUB_REF_NAME}"
+          fi

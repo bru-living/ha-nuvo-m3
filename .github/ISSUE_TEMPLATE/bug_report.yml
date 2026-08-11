@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible problem with the NuVo NV-M3 integration
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Remove private addresses and music-library metadata before posting diagnostics or logs.
+  - type: input
+    id: version
+    attributes:
+      label: Integration version
+      placeholder: 0.8.1
+    validations:
+      required: true
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection type
+      options: [TCP serial bridge, Local serial device]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Explain what happened and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant redacted diagnostics or logs
+      render: text
