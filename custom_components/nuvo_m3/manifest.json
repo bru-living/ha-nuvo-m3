@@ -1,12 +1,12 @@
 {
+  "domain": "nuvo_m3",
+  "name": "NuVo NV-M3 Music Server",
   "codeowners": ["@bru-living"],
   "config_flow": true,
   "documentation": "https://github.com/bru-living/ha-nuvo-m3",
-  "domain": "nuvo_m3",
   "integration_type": "hub",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/bru-living/ha-nuvo-m3/issues",
-  "name": "NuVo NV-M3 Music Server",
   "requirements": ["pyserial-asyncio-fast==0.16"],
   "single_config_entry": true,
   "version": "0.8.1"
