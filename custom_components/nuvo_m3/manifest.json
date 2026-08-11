@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/bru-living/ha-nuvo-m3/issues",
   "requirements": ["pyserial-asyncio-fast==0.16"],
   "single_config_entry": true,
-  "version": "0.8.1"
+  "version": "0.8.2"
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.2
+
+- Corrected the integration manifest ordering required by Hassfest.
+- Corrected the HACS repository manifest.
+- Granted GitHub Actions read access so validation can check out the repository.
+
 ## 0.8.1
 
 - Added local NuVo/Bru Living Home Assistant brand icons and logos.
