@@ -1,6 +1,6 @@
 # NuVo NV-M3 Music Server for Home Assistant
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![HACS Integration](https://img.shields.io/badge/HACS-Integration-41BDF5.svg)](https://hacs.xyz/)
 [![Validate](https://github.com/bru-living/ha-nuvo-m3/actions/workflows/validate.yml/badge.svg)](https://github.com/bru-living/ha-nuvo-m3/actions/workflows/validate.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -131,10 +131,11 @@ USB is for Windows Media Player synchronization and firmware updates. It must be
 
 ### HACS
 
-1. In HACS, open **Integrations > Custom repositories**.
-2. Add `https://github.com/bru-living/ha-nuvo-m3` and select **Integration**.
-3. Install **NuVo NV-M3 Music Server**.
-4. Restart Home Assistant.
+1. Open HACS and search for **NuVo NV-M3 Music Server**.
+2. Download the integration.
+3. Restart Home Assistant, then add it under **Settings > Devices & services**.
+
+The integration is included in HACS's default catalogue. If it is not listed in your instance yet, add `https://github.com/bru-living/ha-nuvo-m3` under **Custom repositories** with category **Integration**.
 
 ### Manual installation
 
