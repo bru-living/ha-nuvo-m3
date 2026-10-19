@@ -48,6 +48,10 @@
     }
   },
   "entity": {
+    "button": {
+      "scan_library": {"name": "Scan library"},
+      "cancel_library_scan": {"name": "Cancel library scan"}
+    },
     "switch": {
       "jukebox_mode": {"name": "Juke Box mode"}
     },
@@ -56,7 +60,9 @@
       "output_a_version": {"name": "Output A firmware"},
       "output_b_version": {"name": "Output B firmware"},
       "output_c_version": {"name": "Output C firmware"},
-      "server_status": {"name": "Server status"}
+      "server_status": {"name": "Server status"},
+      "library_index": {"name": "Library index"},
+      "library_scan_progress": {"name": "Library scan progress"}
     }
   },
   "title": "NuVo NV-M3 Music Server"

@@ -177,3 +177,22 @@ Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Security conc
 ## License
 
 MIT
+### Indexed library and artwork
+
+Version 0.9 adds an optional persistent catalogue of the complete M3 library. Press
+**Scan library** on the integration device, or run `nuvo_m3.scan_library` and choose
+output A, B or C. The integration walks the artist hierarchy and the M3's global
+Tracks menu in the background, then stores their M3 playback paths in Home Assistant.
+
+Once a scan completes, the media browser opens the local index immediately rather
+than paging through the live M3 menus. Artists, albums and tracks are browsable from
+the cache, and albums/tracks receive cover thumbnails when artwork fetching is enabled.
+Songs opened from the indexed **Tracks** view use the M3's global track context, so
+Next and Previous continue across artist boundaries. Upgrading from an older 0.9
+index requires one new library scan to add these global playback paths.
+The **Live M3 menus** entry remains available as a fallback.
+
+The Library index sensor reports the phase, artist/album/track counts, last successful
+scan and any error. A scan temporarily owns the selected output's menu session; audio
+playback continues, but avoid browsing on that output until the scan is complete.
+Cancelling or failing a scan preserves the last complete index.
