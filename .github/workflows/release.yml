@@ -9,7 +9,12 @@ permissions:
   contents: write
 
 jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
+    permissions:
+      contents: read
   release:
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -24,7 +29,9 @@ jobs:
           python -m json.tool custom_components/nuvo_m3/translations/en.json > /dev/null
 
       - name: Build manual-install archive
-        run: zip -r "nuvo_m3-${GITHUB_REF_NAME}.zip" custom_components README.md LICENSE CHANGELOG.md hacs.json
+        run: |
+          python -c 'import json, os; version = json.load(open("custom_components/nuvo_m3/manifest.json"))["version"]; assert os.environ["GITHUB_REF_NAME"] == "v" + version, "Release tag must match manifest version"'
+          zip -r "nuvo_m3-${GITHUB_REF_NAME}.zip" custom_components docs README.md LICENSE CHANGELOG.md hacs.json -x "*/__pycache__/*" "*.pyc"
 
       - name: Create or update GitHub release
         env:

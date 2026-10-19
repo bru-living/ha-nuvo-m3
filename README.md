@@ -6,7 +6,7 @@
 
 [![Open your Home Assistant instance and add this repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=bru-living&repository=ha-nuvo-m3&category=integration)
 
-A local, UI-configured Home Assistant integration for direct RS232 control of the **NuVo NV-M3 Music Server**. It provides three independent media players, native library browsing, Home Assistant-managed playlists, optional online cover artwork, diagnostics, and resilient TCP or local-serial connectivity.
+A local, UI-configured Home Assistant integration for direct RS232 control of the **NuVo NV-M3 Music Server**. Bring your existing music collection into Home Assistant with three independent media players, a fast persistent library browser, album artwork, custom playlists, and TCP or local-serial connectivity.
 
 NuVoNet and amplifier volume control are deliberately outside this integration's scope.
 
@@ -17,6 +17,22 @@ NuVoNet and amplifier volume control are deliberately outside this integration's
 ![NuVo NV-M3 Output A playing Billie Jean with Thriller artwork](docs/images/media-player-artwork.png)
 
 ## Features
+
+### New in 0.9.7: a fast, indexed music library
+
+Scan once, then explore your collection from Home Assistant without waiting for the M3 to rebuild each live menu. The optional local catalogue remembers artists, albums, tracks and their native playback paths across Home Assistant restarts.
+
+- Browse artists and albums, with album and track thumbnails when artwork fetching is enabled.
+- Explore an alphabetical **Tracks** view, with large libraries split into pages of 100 tracks.
+- Choose **Play all tracks** to start the M3's native whole-library playback, or **Play all album tracks** inside an album.
+- Start a song from the indexed Tracks view and use Next or Previous across artist boundaries. Adjacent-track selection also handles M3 menus that start a single-track queue, and wraps at either end of the global track list.
+- Watch the **Library index** sensor for scan phase, progress, collection counts, skipped items and the last successful scan.
+- Keep the last complete catalogue if a scan fails or is cancelled. Slow menu pages are retried, inaccessible artist or album menus are reported and skipped, and damaged rows retain their original positions so later playback paths stay correct.
+- Open **Live M3 menus** whenever you need the hardware's live view.
+
+Press **Scan library** on the device page to scan using output A, or call `nuvo_m3.scan_library` and choose A, B or C. Use **Cancel library scan** or `nuvo_m3.cancel_library_scan` to cancel. The scan uses that output's menu session; playback continues, but wait for it to finish before browsing on the same output. Artwork enrichment runs when enabled, and ambiguous duplicate track titles keep their metadata unassigned.
+
+If you already scanned with an earlier 0.9 version, run one new scan to add the global Tracks playback paths. Rescan after changing music on the M3 to refresh the local catalogue.
 
 ### Three independent outputs
 
@@ -113,7 +129,7 @@ USB is for Windows Media Player synchronization and firmware updates. It must be
 
 ## Install
 
-### HACS custom repository
+### HACS
 
 1. In HACS, open **Integrations > Custom repositories**.
 2. Add `https://github.com/bru-living/ha-nuvo-m3` and select **Integration**.
@@ -133,6 +149,12 @@ Open **Settings > Devices & services > Add integration**, search for **NuVo NV-M
 - **Fetch cover artwork** if you accept sending playing metadata to MusicBrainz and the Cover Art Archive.
 
 Use the integration's **Reconfigure** action to change the endpoint or artwork setting later. The replacement endpoint is tested before it is saved.
+
+## Updating to 0.9.7
+
+Update the existing installation in HACS and restart Home Assistant. The integration stores managed playlists and the library catalogue separately in Home Assistant's `.storage` directory. Back up your Home Assistant configuration before upgrading, and keep the existing integration entry so its stored collection remains associated with it.
+
+After the restart, open **Browse media** on any output. Run **Scan library** to create the new index, or refresh an index created by an earlier 0.9 version. Your music files remain on the M3 throughout.
 
 ## Playlist example
 
@@ -170,29 +192,10 @@ RS232 control, browsing, playback and playlist storage remain local. Only option
 
 ## Development
 
-Protocol parsing and command generation are isolated in `protocol.py`. Run tests with `pytest`. GitHub Actions validates HACS metadata, Hassfest requirements, Python compilation and JSON files.
+Protocol parsing and command generation are isolated in `protocol.py`. Install `pytest`, `pytest-asyncio` and the manifest's serial dependency, then run `python -m pytest`. These tests cover the protocol layer independently of Home Assistant setup. GitHub Actions runs the protocol tests, Python compilation, JSON validation, HACS and Hassfest. The release workflow requires those checks to pass before publishing an archive and excludes generated Python bytecode.
 
 Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Security concerns should follow [SECURITY.md](SECURITY.md).
 
 ## License
 
 MIT
-### Indexed library and artwork
-
-Version 0.9 adds an optional persistent catalogue of the complete M3 library. Press
-**Scan library** on the integration device, or run `nuvo_m3.scan_library` and choose
-output A, B or C. The integration walks the artist hierarchy and the M3's global
-Tracks menu in the background, then stores their M3 playback paths in Home Assistant.
-
-Once a scan completes, the media browser opens the local index immediately rather
-than paging through the live M3 menus. Artists, albums and tracks are browsable from
-the cache, and albums/tracks receive cover thumbnails when artwork fetching is enabled.
-Songs opened from the indexed **Tracks** view use the M3's global track context, so
-Next and Previous continue across artist boundaries. Upgrading from an older 0.9
-index requires one new library scan to add these global playback paths.
-The **Live M3 menus** entry remains available as a fallback.
-
-The Library index sensor reports the phase, artist/album/track counts, last successful
-scan and any error. A scan temporarily owns the selected output's menu session; audio
-playback continues, but avoid browsing on that output until the scan is complete.
-Cancelling or failing a scan preserves the last complete index.

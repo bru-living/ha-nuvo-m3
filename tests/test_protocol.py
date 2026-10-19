@@ -142,13 +142,14 @@ async def test_truncated_menu_item_is_skipped_without_losing_position() -> None:
 async def test_browse_menu_uses_requested_timeout() -> None:
     client = NuvoM3Client("loop://")
     client._reset_menu = AsyncMock()
-    page = object()
+    page = MenuPage(4294967295, "Main Menu", 0, 0, 0, 0, [])
     client._request_menu = AsyncMock(return_value=page)
 
     assert await client.browse_menu("A", [], timeout=30) is page
     client._request_menu.assert_awaited_once_with(
         "A", "OUT'A'MENUUP,0,0,0", timeout=30
     )
+    client._cancel_menu_keepalive("A")
 
 
 @pytest.mark.asyncio
@@ -175,20 +176,27 @@ async def test_menu_keepalive_is_bounded_and_releases_session() -> None:
 async def test_jukebox_option_discovery_and_toggle() -> None:
     client = NuvoM3Client("loop://")
     sent: list[str] = []
+    enabled = True
 
     async def send(command: str) -> None:
+        nonlocal enabled
         sent.append(command)
         if "MENUUP" in command:
             client.parse_packet('#OUT\'A\'MENU,4294967295,"Main Menu",1,0,1,0\r')
             client.parse_packet('#OUT\'A\'MENUITEM,8,"Options",1\r')
         elif "MENUSELECT,4294967295" in command:
             client.parse_packet('#OUT\'A\'MENU,8,"Options",1,0,1,0\r')
-            client.parse_packet('#OUT\'A\'MENUITEM,3,"Juke Box Mode",9\r')
+            flags = 9 if enabled else 1
+            client.parse_packet(f'#OUT\'A\'MENUITEM,3,"Juke Box Mode",{flags}\r')
         elif "MENUPLAY,8,3" in command:
-            client.parse_packet('#OUT\'A\'MENU,8,"Options",1,0,1,0\r')
-            client.parse_packet('#OUT\'A\'MENUITEM,3,"Juke Box Mode",1\r')
+            enabled = not enabled
+            client.parse_packet("#OK\r")
 
     client.send = send
     assert await client.get_jukebox_mode("A") is True
     assert await client.set_jukebox_mode("A", False) is False
     assert "OUT'A'MENUPLAY,8,3,0" in sent
+    assert await client.set_jukebox_mode("A", False) is False
+    assert sent.count("OUT'A'MENUPLAY,8,3,0") == 1
+    assert await client.set_jukebox_mode("A", True) is True
+    assert sent.count("OUT'A'MENUPLAY,8,3,0") == 2
