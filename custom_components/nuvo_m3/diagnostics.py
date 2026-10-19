@@ -26,5 +26,6 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
             for name, tracks in client.playlist_manager.playlists.items()
         },
         "artwork_enabled": client.artwork_manager is not None,
+        "library_index": asdict(client.library_manager.status),
     }
     return data

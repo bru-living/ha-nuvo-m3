@@ -23,8 +23,9 @@ from .const import (
 from .artwork import ArtworkManager
 from .protocol import NuvoM3Client, NuvoM3ConnectionError, NuvoM3ProtocolError
 from .playlist import PlaylistManager
+from .library import LibraryManager
 
-PLATFORMS = [Platform.MEDIA_PLAYER, Platform.SENSOR, Platform.SWITCH]
+PLATFORMS = [Platform.BUTTON, Platform.MEDIA_PLAYER, Platform.SENSOR, Platform.SWITCH]
 type NuvoM3ConfigEntry = ConfigEntry[NuvoM3Client]
 
 
@@ -43,7 +44,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: NuvoM3ConfigEntry) -> bo
     await manager.async_load()
     client.playlist_manager = manager
     client.artwork_manager = ArtworkManager(hass) if entry.data.get(CONF_ARTWORK, False) else None
-    _async_register_services(hass, manager)
+    library = LibraryManager(hass, client, entry.entry_id)
+    await library.async_load()
+    client.library_manager = library
+    _async_register_services(hass, manager, library)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
@@ -52,6 +56,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: NuvoM3ConfigEntry) -> b
     """Unload an M3 config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         await entry.runtime_data.playlist_manager.async_stop_all()
+        await entry.runtime_data.library_manager.async_stop()
         for service in (
             "create_playlist",
             "delete_playlist",
@@ -59,6 +64,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: NuvoM3ConfigEntry) -> b
             "remove_playlist_track",
             "play_playlist",
             "stop_playlist",
+            "scan_library",
+            "cancel_library_scan",
         ):
             hass.services.async_remove(DOMAIN, service)
         await entry.runtime_data.disconnect()
@@ -81,7 +88,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-def _async_register_services(hass: HomeAssistant, manager: PlaylistManager) -> None:
+def _async_register_services(
+    hass: HomeAssistant, manager: PlaylistManager, library: LibraryManager
+) -> None:
     """Register persistent-playlist actions for the single M3 entry."""
 
     async def handle(call: ServiceCall) -> None:
@@ -98,6 +107,10 @@ def _async_register_services(hass: HomeAssistant, manager: PlaylistManager) -> N
                 manager.play(call.data["name"], call.data["output"])
             elif call.service == "stop_playlist":
                 manager.stop(call.data["output"])
+            elif call.service == "scan_library":
+                library.start(call.data["output"])
+            elif call.service == "cancel_library_scan":
+                library.cancel()
         except ValueError as err:
             raise HomeAssistantError(str(err)) from err
 
@@ -119,6 +132,10 @@ def _async_register_services(hass: HomeAssistant, manager: PlaylistManager) -> N
             {vol.Required("name"): cv.string, vol.Required("output"): output_schema}
         ),
         "stop_playlist": vol.Schema({vol.Required("output"): output_schema}),
+        "scan_library": vol.Schema(
+            {vol.Optional("output", default="A"): output_schema}
+        ),
+        "cancel_library_scan": vol.Schema({}),
     }
     for service, schema in schemas.items():
         hass.services.async_register(DOMAIN, service, handle, schema=schema)

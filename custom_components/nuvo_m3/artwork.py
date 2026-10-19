@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER = logging.getLogger(__name__)
-_USER_AGENT = "ha-nuvo-m3/0.8.1 (https://github.com/bru-living/ha-nuvo-m3)"
+_USER_AGENT = "ha-nuvo-m3/0.9.7 (https://github.com/bru-living/ha-nuvo-m3)"
 
 
 def _normalise(value: str) -> str:

@@ -26,6 +26,9 @@ from .entity import NuvoM3Entity
 
 HA_PLAYLISTS_ID = "nuvo-m3-ha-playlists"
 HA_PLAYLIST_PREFIX = "nuvo-m3-ha-playlist:"
+INDEX_PREFIX = "nuvo-m3-index:"
+LIVE_LIBRARY_ID = "nuvo-m3-live-library"
+INDEX_TRACK_PAGE_SIZE = 100
 
 FEATURES = (
     MediaPlayerEntityFeature.PLAY
@@ -98,6 +101,7 @@ class NuvoM3MediaPlayer(NuvoM3Entity, MediaPlayerEntity):
         self._attr_name = f"Output {output}"
         self._attr_unique_id = f"{entry.entry_id}_output_{output.lower()}"
         self._browse_titles: dict[str, str] = {}
+        self._global_track_index: int | None = None
         self._artwork_key: tuple[str, str, str] | None = None
         self._artwork_task: asyncio.Task[None] | None = None
         self._artwork_status = (
@@ -214,10 +218,32 @@ class NuvoM3MediaPlayer(NuvoM3Entity, MediaPlayerEntity):
         await self.client.pause(self.output)
 
     async def async_media_next_track(self) -> None:
+        if await self._async_step_global_track(1):
+            return
         await self.client.next_track(self.output)
 
     async def async_media_previous_track(self) -> None:
+        if await self._async_step_global_track(-1):
+            return
         await self.client.previous_track(self.output)
+
+    async def _async_step_global_track(self, direction: int) -> bool:
+        """Move within the indexed global Tracks list when it started playback."""
+        if self._global_track_index is None:
+            return False
+        tracks = self.client.library_manager.catalogue.get("global_tracks", [])
+        if not tracks:
+            self._global_track_index = None
+            return False
+        index = (self._global_track_index + direction) % len(tracks)
+        track = tracks[index]
+        path = [tuple(part) for part in track["path"]]
+        self._global_track_index = index
+        self.client.playlist_manager.remember_selection(
+            self.output, track["title"], path
+        )
+        await self.client.play_menu_item(self.output, path[:-1], path[-1])
+        return True
 
     async def async_media_seek(self, position: float) -> None:
         state = self.client.outputs[self.output]
@@ -240,6 +266,12 @@ class NuvoM3MediaPlayer(NuvoM3Entity, MediaPlayerEntity):
         media_content_id: str | None = None,
     ) -> BrowseMedia:
         """Browse the M3's dynamic music-library menu."""
+        if media_content_id is None and self.client.library_manager.available:
+            return self._browse_index_root()
+        if media_content_id and media_content_id.startswith(INDEX_PREFIX):
+            return self._browse_index(media_content_id)
+        if media_content_id == LIVE_LIBRARY_ID:
+            media_content_id = None
         if media_content_id == HA_PLAYLISTS_ID:
             return self._browse_ha_playlists()
         if media_content_id and media_content_id.startswith(HA_PLAYLIST_PREFIX):
@@ -290,6 +322,18 @@ class NuvoM3MediaPlayer(NuvoM3Entity, MediaPlayerEntity):
                     can_expand=True,
                 ),
             )
+            if self.client.library_manager.available:
+                children.insert(
+                    1,
+                    BrowseMedia(
+                        media_class=MediaClass.DIRECTORY,
+                        media_content_id=LIVE_LIBRARY_ID,
+                        media_content_type=MediaType.MUSIC,
+                        title="Live M3 menus",
+                        can_play=False,
+                        can_expand=True,
+                    ),
+                )
         next_start = page.start + page.returned
         if next_start < page.total:
             children.append(
@@ -318,15 +362,293 @@ class NuvoM3MediaPlayer(NuvoM3Entity, MediaPlayerEntity):
             children=children,
         )
 
+    @staticmethod
+    def _index_id(kind: str, *indexes: int) -> str:
+        return INDEX_PREFIX + kind + ":" + ":".join(str(index) for index in indexes)
+
+    def _browse_index_root(self) -> BrowseMedia:
+        """Return the persistent catalogue without contacting the M3."""
+        artists = self.client.library_manager.catalogue.get("artists", [])
+        artist_thumbnails = [
+            album.get("artwork")
+            for artist in artists
+            for album in artist.get("albums", [])
+            if album.get("artwork")
+        ]
+        children = [
+            BrowseMedia(
+                media_class=MediaClass.DIRECTORY,
+                media_content_id=self._index_id("artists"),
+                media_content_type=MediaType.MUSIC,
+                title=f"Artists ({len(artists)})",
+                can_play=False,
+                can_expand=True,
+                thumbnail=artist_thumbnails[0] if artist_thumbnails else None,
+            ),
+            BrowseMedia(
+                media_class=MediaClass.DIRECTORY,
+                media_content_id=self._index_id("tracks", 0),
+                media_content_type=MediaType.MUSIC,
+                title=(
+                    f"Tracks ({self.client.library_manager.status.global_tracks})"
+                    if "global_tracks" in self.client.library_manager.catalogue
+                    else "Tracks (rescan library required)"
+                ),
+                can_play=False,
+                can_expand=True,
+                thumbnail=artist_thumbnails[0] if artist_thumbnails else None,
+            ),
+        ]
+        children.insert(
+            0,
+            BrowseMedia(
+                media_class=MediaClass.PLAYLIST,
+                media_content_id=HA_PLAYLISTS_ID,
+                media_content_type=MediaType.MUSIC,
+                title="Home Assistant Playlists",
+                can_play=False,
+                can_expand=True,
+            ),
+        )
+        children.append(
+            BrowseMedia(
+                media_class=MediaClass.DIRECTORY,
+                media_content_id=LIVE_LIBRARY_ID,
+                media_content_type=MediaType.MUSIC,
+                title="Live M3 menus",
+                can_play=False,
+                can_expand=True,
+            )
+        )
+        return BrowseMedia(
+            media_class=MediaClass.DIRECTORY,
+            media_content_id=self._index_id("root"),
+            media_content_type=MediaType.MUSIC,
+            title="Indexed M3 Library",
+            can_play=False,
+            can_expand=True,
+            children=children,
+        )
+
+    def _browse_index(self, media_id: str) -> BrowseMedia:
+        """Browse artists, albums and tracks from the local catalogue."""
+        parts = media_id.removeprefix(INDEX_PREFIX).split(":")
+        kind = parts[0]
+        indexes = [int(value) for value in parts[1:] if value]
+        artists = self.client.library_manager.catalogue.get("artists", [])
+        if kind == "root":
+            return self._browse_index_root()
+        if kind == "artists":
+            children = [
+                BrowseMedia(
+                    media_class=MediaClass.ARTIST,
+                    media_content_id=self._index_id("artist", artist_index),
+                    media_content_type=MediaType.MUSIC,
+                    title=artist["name"],
+                    can_play=False,
+                    can_expand=True,
+                    thumbnail=next(
+                        (
+                            album.get("artwork")
+                            for album in artist.get("albums", [])
+                            if album.get("artwork")
+                        ),
+                        None,
+                    ),
+                )
+                for artist_index, artist in enumerate(artists)
+            ]
+            return BrowseMedia(
+                media_class=MediaClass.DIRECTORY,
+                media_content_id=media_id,
+                media_content_type=MediaType.MUSIC,
+                title=f"Artists ({len(children)})",
+                can_play=False,
+                can_expand=True,
+                children=children,
+            )
+        if kind == "tracks" and len(indexes) == 1:
+            offset = indexes[0]
+            global_tracks = self.client.library_manager.catalogue.get("global_tracks", [])
+            indexed_tracks = sorted(
+                enumerate(global_tracks), key=lambda item: item[1]["title"].casefold()
+            )
+            page = indexed_tracks[offset : offset + INDEX_TRACK_PAGE_SIZE]
+            children = []
+            if offset == 0 and global_tracks:
+                children.append(
+                    BrowseMedia(
+                        media_class=MediaClass.PLAYLIST,
+                        media_content_id=self._index_id("play_all_tracks"),
+                        media_content_type=MediaType.MUSIC,
+                        title="Play all tracks",
+                        can_play=True,
+                        can_expand=False,
+                        thumbnail=next(
+                            (
+                                track.get("artwork")
+                                for track in global_tracks
+                                if track.get("artwork")
+                            ),
+                            None,
+                        ),
+                    )
+                )
+            for track_index, track in page:
+                artist = track.get("artist")
+                children.append(
+                    BrowseMedia(
+                        media_class=MediaClass.TRACK,
+                        media_content_id=self._index_id("global_track", track_index),
+                        media_content_type=MediaType.MUSIC,
+                        title=(
+                            f'{track["title"]} — {artist}'
+                            if artist
+                            else track["title"]
+                        ),
+                        can_play=True,
+                        can_expand=False,
+                        thumbnail=track.get("artwork"),
+                    )
+                )
+            next_offset = offset + len(page)
+            if next_offset < len(indexed_tracks):
+                children.append(
+                    BrowseMedia(
+                        media_class=MediaClass.DIRECTORY,
+                        media_content_id=self._index_id("tracks", next_offset),
+                        media_content_type=MediaType.MUSIC,
+                        title=(
+                            f"Next ({next_offset + 1}-"
+                            f"{min(next_offset + INDEX_TRACK_PAGE_SIZE, len(indexed_tracks))}"
+                            f" of {len(indexed_tracks)})"
+                        ),
+                        can_play=False,
+                        can_expand=True,
+                    )
+                )
+            return BrowseMedia(
+                media_class=MediaClass.DIRECTORY,
+                media_content_id=media_id,
+                media_content_type=MediaType.MUSIC,
+                title=(
+                    f"Tracks ({offset + 1}-"
+                    f"{min(offset + len(page), len(indexed_tracks))}"
+                    f" of {len(indexed_tracks)})"
+                ),
+                can_play=False,
+                can_expand=True,
+                children=children,
+            )
+        if kind == "artist" and len(indexes) == 1:
+            artist_index = indexes[0]
+            artist = artists[artist_index]
+            children = [
+                BrowseMedia(
+                    media_class=MediaClass.ALBUM,
+                    media_content_id=self._index_id(
+                        "album", artist_index, album_index
+                    ),
+                    media_content_type=MediaType.MUSIC,
+                    title=album["title"],
+                    can_play=True,
+                    can_expand=True,
+                    thumbnail=album.get("artwork"),
+                )
+                for album_index, album in enumerate(artist.get("albums", []))
+            ]
+            return BrowseMedia(
+                media_class=MediaClass.ARTIST,
+                media_content_id=media_id,
+                media_content_type=MediaType.MUSIC,
+                title=artist["name"],
+                can_play=False,
+                can_expand=True,
+                children=children,
+            )
+        if kind == "album" and len(indexes) == 2:
+            artist = artists[indexes[0]]
+            album = artist["albums"][indexes[1]]
+            children = [
+                BrowseMedia(
+                    media_class=MediaClass.PLAYLIST,
+                    media_content_id=self._index_id(
+                        "play_all_album", indexes[0], indexes[1]
+                    ),
+                    media_content_type=MediaType.MUSIC,
+                    title="Play all album tracks",
+                    can_play=True,
+                    can_expand=False,
+                    thumbnail=album.get("artwork"),
+                )
+            ]
+            for track_index, track in enumerate(album.get("tracks", [])):
+                track_id = self._index_id(
+                    "track", indexes[0], indexes[1], track_index
+                )
+                children.append(
+                    BrowseMedia(
+                        media_class=MediaClass.TRACK,
+                        media_content_id=track_id,
+                        media_content_type=MediaType.MUSIC,
+                        title=track["title"],
+                        can_play=True,
+                        can_expand=False,
+                        thumbnail=album.get("artwork"),
+                    )
+                )
+            return BrowseMedia(
+                media_class=MediaClass.ALBUM,
+                media_content_id=media_id,
+                media_content_type=MediaType.MUSIC,
+                title=album["title"],
+                can_play=bool(children),
+                can_expand=True,
+                thumbnail=album.get("artwork"),
+                children=children,
+            )
+        raise ValueError("Invalid indexed-library media identifier")
+
     async def async_play_media(
         self, media_type: MediaType | str, media_id: str, **kwargs: Any
     ) -> None:
         """Play a library item selected in Home Assistant's media browser."""
         if media_id.startswith(HA_PLAYLIST_PREFIX):
+            self._global_track_index = None
             name = self._decode_playlist_name(media_id)
             self.client.playlist_manager.play(name, self.output)
             return
+        if media_id.startswith(INDEX_PREFIX):
+            parts = media_id.removeprefix(INDEX_PREFIX).split(":")
+            kind = parts[0]
+            indexes = [int(value) for value in parts[1:] if value]
+            artists = self.client.library_manager.catalogue.get("artists", [])
+            if kind == "play_all_tracks" and not indexes:
+                self._global_track_index = None
+                await self.client.play_all(self.output)
+                return
+            if kind in ("album", "play_all_album") and len(indexes) == 2:
+                self._global_track_index = None
+                album = artists[indexes[0]]["albums"][indexes[1]]
+                path = [tuple(part) for part in album["path"]]
+                title = album["title"]
+            elif kind == "track" and len(indexes) == 3:
+                self._global_track_index = None
+                track = artists[indexes[0]]["albums"][indexes[1]]["tracks"][indexes[2]]
+                path = [tuple(part) for part in track["path"]]
+                title = track["title"]
+            elif kind == "global_track" and len(indexes) == 1:
+                self._global_track_index = indexes[0]
+                track = self.client.library_manager.catalogue["global_tracks"][indexes[0]]
+                path = [tuple(part) for part in track["path"]]
+                title = track["title"]
+            else:
+                raise ValueError("This indexed library item cannot be played")
+            self.client.playlist_manager.remember_selection(self.output, title, path)
+            await self.client.play_menu_item(self.output, path[:-1], path[-1])
+            return
         path, _ = _decode_path(media_id, self.output)
+        self._global_track_index = None
         if not path:
             raise ValueError("The M3 root menu cannot be played")
         title = self._browse_titles.get(media_id, "M3 track")

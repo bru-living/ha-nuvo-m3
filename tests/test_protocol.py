@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from custom_components.nuvo_m3.protocol import NuvoM3Client
+from custom_components.nuvo_m3.protocol import MenuItem, MenuPage, NuvoM3Client
 
 
 def test_connection_urls_match_t2fam_options() -> None:
@@ -14,6 +14,22 @@ def test_connection_urls_match_t2fam_options() -> None:
     tcp = NuvoM3Client({"connection_type": "tcp", "host": "192.0.2.10", "port": 4999})
     assert serial._connection_url == "/dev/ttyUSB0"
     assert tcp._connection_url == "socket://192.0.2.10:4999"
+
+
+@pytest.mark.asyncio
+async def test_play_all_uses_native_main_menu_item() -> None:
+    client = NuvoM3Client("loop://")
+    play_all = MenuItem(7, "Play All", 0, 5, 4294967295)
+    client.browse_menu = AsyncMock(
+        return_value=MenuPage(4294967295, "Main Menu", 7, 0, 7, 0, [play_all])
+    )
+    client.play_menu_item = AsyncMock()
+
+    await client.play_all("A")
+
+    client.play_menu_item.assert_awaited_once_with(
+        "A", [], (4294967295, 7, 5)
+    )
 
 
 def test_parse_version_and_server_status() -> None:
@@ -97,7 +113,42 @@ async def test_menu_response_and_path_commands() -> None:
     assert [(item.item_id, item.title, item.index) for item in page.items] == [
         (2, "Albums", 0), (5, "Playlists", 1)
     ]
+    assert all(item.menu_id == 4294967295 for item in page.items)
     assert sent[:2] == ["OUT'A'MENUEXIT", "OUT'A'MENUUP,0,0,0"]
+    client._cancel_menu_keepalive("A")
+
+
+@pytest.mark.asyncio
+async def test_truncated_menu_item_is_skipped_without_losing_position() -> None:
+    client = NuvoM3Client("loop://")
+
+    async def send(command: str) -> None:
+        if "MENUUP" in command:
+            client.parse_packet('#OUT\'A\'MENU,6,"Tracks",3,20,3,0\r')
+            client.parse_packet('#OUT\'A\'MENUITEM,100,"First",0\r')
+            client.parse_packet('#OUT\'A\'MENUITEM,broken,"Truncated\r')
+            client.parse_packet('#OUT\'A\'MENUITEM,102,"Third",0\r')
+
+    client.send = send
+    page = await client.browse_menu("A", [])
+
+    assert [item.index for item in page.items] == [20, 21, 22]
+    assert page.items[1].disabled
+    assert page.items[2].item_id == 102
+    client._cancel_menu_keepalive("A")
+
+
+@pytest.mark.asyncio
+async def test_browse_menu_uses_requested_timeout() -> None:
+    client = NuvoM3Client("loop://")
+    client._reset_menu = AsyncMock()
+    page = MenuPage(4294967295, "Main Menu", 0, 0, 0, 0, [])
+    client._request_menu = AsyncMock(return_value=page)
+
+    assert await client.browse_menu("A", [], timeout=30) is page
+    client._request_menu.assert_awaited_once_with(
+        "A", "OUT'A'MENUUP,0,0,0", timeout=30
+    )
     client._cancel_menu_keepalive("A")
 
 
@@ -125,20 +176,27 @@ async def test_menu_keepalive_is_bounded_and_releases_session() -> None:
 async def test_jukebox_option_discovery_and_toggle() -> None:
     client = NuvoM3Client("loop://")
     sent: list[str] = []
+    enabled = True
 
     async def send(command: str) -> None:
+        nonlocal enabled
         sent.append(command)
         if "MENUUP" in command:
             client.parse_packet('#OUT\'A\'MENU,4294967295,"Main Menu",1,0,1,0\r')
             client.parse_packet('#OUT\'A\'MENUITEM,8,"Options",1\r')
         elif "MENUSELECT,4294967295" in command:
             client.parse_packet('#OUT\'A\'MENU,8,"Options",1,0,1,0\r')
-            client.parse_packet('#OUT\'A\'MENUITEM,3,"Juke Box Mode",9\r')
-        elif "MENUSELECT,8,3" in command:
-            client.parse_packet('#OUT\'A\'MENU,8,"Options",1,0,1,0\r')
-            client.parse_packet('#OUT\'A\'MENUITEM,3,"Juke Box Mode",1\r')
+            flags = 9 if enabled else 1
+            client.parse_packet(f'#OUT\'A\'MENUITEM,3,"Juke Box Mode",{flags}\r')
+        elif "MENUPLAY,8,3" in command:
+            enabled = not enabled
+            client.parse_packet("#OK\r")
 
     client.send = send
     assert await client.get_jukebox_mode("A") is True
     assert await client.set_jukebox_mode("A", False) is False
-    assert "OUT'A'MENUSELECT,8,3,0" in sent
+    assert "OUT'A'MENUPLAY,8,3,0" in sent
+    assert await client.set_jukebox_mode("A", False) is False
+    assert sent.count("OUT'A'MENUPLAY,8,3,0") == 1
+    assert await client.set_jukebox_mode("A", True) is True
+    assert sent.count("OUT'A'MENUPLAY,8,3,0") == 2

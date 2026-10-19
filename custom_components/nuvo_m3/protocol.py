@@ -83,6 +83,7 @@ class MenuItem:
     title: str
     flags: int
     index: int
+    menu_id: int = 0
 
     @property
     def can_expand(self) -> bool:
@@ -274,6 +275,21 @@ class NuvoM3Client:
     async def previous_track(self, output: str) -> None:
         await self.send(f"OUT'{output}'PREVIOUSTRACK")
 
+    async def play_all(self, output: str) -> None:
+        """Start the M3's native whole-library Play All command."""
+        root = await self.browse_menu(output, [])
+        item = next(
+            (item for item in root.items if item.title.casefold() == "play all"),
+            None,
+        )
+        if item is None:
+            raise NuvoM3ProtocolError("The M3 Main Menu does not contain Play All")
+        await self.play_menu_item(
+            output,
+            [],
+            (root.menu_id, item.item_id, item.index),
+        )
+
     async def skip(self, output: str, seconds: float) -> None:
         tenths = max(0, round(abs(seconds) * 10))
         direction = "SKIPFORWARD" if seconds >= 0 else "SKIPBACK"
@@ -286,21 +302,31 @@ class NuvoM3Client:
         await self.send(f"OUT'{output}'REPEAT,{int(enabled)}")
 
     async def browse_menu(
-        self, output: str, path: list[tuple[int, int, int]], start_index: int = 0
+        self,
+        output: str,
+        path: list[tuple[int, int, int]],
+        start_index: int = 0,
+        *,
+        timeout: float = 8,
     ) -> MenuPage:
         """Replay a path and return one M3 menu block of at most 20 items."""
         async with self._menu_locks[output]:
             self._cancel_menu_keepalive(output)
             await self._reset_menu(output)
-            page = await self._request_menu(output, f"OUT'{output}'MENUUP,0,0,0")
+            page = await self._request_menu(
+                output, f"OUT'{output}'MENUUP,0,0,0", timeout=timeout
+            )
             for menu_id, item_id, index in path:
                 page = await self._request_menu(
-                    output, f"OUT'{output}'MENUSELECT,{menu_id},{item_id},{index}"
+                    output,
+                    f"OUT'{output}'MENUSELECT,{menu_id},{item_id},{index}",
+                    timeout=timeout,
                 )
             if start_index and start_index != page.start:
                 page = await self._request_menu(
                     output,
                     f"OUT'{output}'MENUREQUEST,{page.menu_id},{start_index}",
+                    timeout=timeout,
                 )
             self._start_menu_keepalive(output, page.menu_id)
             return page
@@ -353,10 +379,13 @@ class NuvoM3Client:
                 current = bool(item.flags & 8)
                 if current == enabled:
                     return current
-                page = await self._request_menu(
-                    output,
-                    f"OUT'{output}'MENUSELECT,{page.menu_id},{item.item_id},{item.index}",
+                await self.send(
+                    f"OUT'{output}'MENUPLAY,{page.menu_id},{item.item_id},{item.index}"
                 )
+                # MENUPLAY may answer with only #OK/MENUEXIT when it toggles a
+                # checkmarked option, so reopen the menu and verify the state.
+                await asyncio.sleep(0.2)
+                page = await self._open_options_menu(output)
                 return bool(self._find_jukebox_option(page).flags & 8)
             finally:
                 await self.send(f"OUT'{output}'MENUEXIT")
@@ -439,7 +468,9 @@ class NuvoM3Client:
         # any pending menu-exit notification before a new request future exists.
         await asyncio.sleep(0.35)
 
-    async def _request_menu(self, output: str, command: str) -> MenuPage:
+    async def _request_menu(
+        self, output: str, command: str, *, timeout: float = 8
+    ) -> MenuPage:
         """Send one menu command and await its multi-packet response."""
         loop = asyncio.get_running_loop()
         future: asyncio.Future[MenuPage] = loop.create_future()
@@ -447,9 +478,11 @@ class NuvoM3Client:
         self._menu_pages[output] = None
         await self.send(command)
         try:
-            return await asyncio.wait_for(future, 8)
+            return await asyncio.wait_for(future, timeout)
         except TimeoutError as err:
-            raise NuvoM3ProtocolError("Timed out waiting for an M3 menu response") from err
+            raise NuvoM3ProtocolError(
+                f"Timed out after {timeout:g}s waiting for an M3 menu response"
+            ) from err
         finally:
             self._menu_futures[output] = None
             self._menu_pages[output] = None
@@ -516,11 +549,37 @@ class NuvoM3Client:
                 values = next(csv.reader([match.group(2)], skipinitialspace=True))
                 if len(values) != 3:
                     raise ValueError(f"expected 3 menu-item fields, got {len(values)}")
-                page.items.append(MenuItem(int(values[0]), values[1], int(values[2]), page.start + len(page.items)))
+                page.items.append(
+                    MenuItem(
+                        int(values[0]),
+                        values[1],
+                        int(values[2]),
+                        page.start + len(page.items),
+                        page.menu_id,
+                    )
+                )
                 if len(page.items) >= page.returned:
                     self._finish_menu(output)
             except (ValueError, csv.Error) as err:
-                self._fail_menu(output, f"Invalid menu item: {err}")
+                # Some M3 units occasionally emit a truncated row while returning
+                # large menus. Count it as a disabled placeholder so subsequent
+                # absolute menu indexes remain correct and the page can complete.
+                page.items.append(
+                    MenuItem(
+                        0,
+                        "Unavailable item",
+                        4,
+                        page.start + len(page.items),
+                        page.menu_id,
+                    )
+                )
+                self.diagnostics.protocol_errors += 1
+                self.diagnostics.last_error = f"Skipped invalid menu item: {err}"
+                _LOGGER.warning(
+                    "Skipped invalid NV-M3 menu item %r: %s", packet, err
+                )
+                if len(page.items) >= page.returned:
+                    self._finish_menu(output)
             return True
         match = _LICENSE_ERROR.match(packet)
         if match:
@@ -555,6 +614,11 @@ class NuvoM3Client:
         page = self._menu_pages[output]
         if future and not future.done() and page:
             future.set_result(page)
+
+    def notify_update(self) -> None:
+        """Notify entities after integration-managed state changes."""
+        for callback in tuple(self._callbacks):
+            callback()
 
     def _fail_menu(self, output: str, message: str) -> None:
         future = self._menu_futures[output]

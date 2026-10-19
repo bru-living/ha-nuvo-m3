@@ -82,3 +82,17 @@ stop_playlist:
       selector:
         select:
           options: ["A", "B", "C"]
+scan_library:
+  name: Scan library
+  description: Build a persistent local catalogue by scanning the M3 artist hierarchy and global Tracks menu. The chosen output's menu is used during the scan.
+  fields:
+    output:
+      name: Output
+      description: M3 output whose menu session should be used for indexing.
+      default: "A"
+      selector:
+        select:
+          options: ["A", "B", "C"]
+cancel_library_scan:
+  name: Cancel library scan
+  description: Cancel an active scan and retain the previous complete index.
