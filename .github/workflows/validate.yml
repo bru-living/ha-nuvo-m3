@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   protocol-tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,14 +30,14 @@ jobs:
           python -m json.tool custom_components/nuvo_m3/translations/en.json > /dev/null
           python -m pytest -q
   validate-hacs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: hacs/action@main
         with:
           category: integration
   validate-hassfest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: home-assistant/actions/hassfest@master
